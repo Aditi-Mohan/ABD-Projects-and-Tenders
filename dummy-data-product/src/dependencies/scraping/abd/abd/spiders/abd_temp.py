@@ -1,6 +1,8 @@
+from typing import Counter
 import scrapy
 from scrapy import Request
 import logging
+from datetime import datetime as dt
 
 
 class AbdTempSpider(scrapy.Spider):
@@ -8,8 +10,6 @@ class AbdTempSpider(scrapy.Spider):
     allowed_domains = ['www.adb.org']
     start_urls = ['https://www.adb.org/projects?page=0/']
     headers= {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:48.0) Gecko/20100101 Firefox/48.0'}
-    counter = 0
-    # allData = []
 
     def start_requests(self):
         for url in self.start_urls:
@@ -28,10 +28,11 @@ class AbdTempSpider(scrapy.Spider):
             }
 
             yield response.follow(url=meta['link'], callback=self.parse_info, meta=meta, headers=self.headers)
-            # except:
-                # logging.debug("error")
-        # logging.info(len(self.allData))
-        # logging.info(self.allData)
+        
+        next_page = response.xpath('//ul[@class="pager"]/li[@class="pager-next"]/a/@href').get()
+        if(next_page is not None):
+            yield Request('https://www.adb.org'+next_page+'/', headers=self.headers, callback=self.parse)
+
     
     def getDesc(self, res):
         desc = ""
@@ -90,9 +91,34 @@ class AbdTempSpider(scrapy.Spider):
         return urls
 
     def getDates(self, res):
-        timetable = res.xpath('//div[@id="tabs-0"]/div[contains(@class, "tabs-panel")][2]/div/div/div/div/table[./tbody/tr[1]/th/text() = "Timetable"]').get()
-        logging.debug(timetable is None)
-        return 0
+        monthMapping = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
+        datesUnformated = {}
+        datesFormated = {}
+        timetable = res.xpath('.//div[@id="tabs-0"]/div[contains(@class, "tabs-panel")][2]/div/div/div/table[./tr[1]/th/text() = "Timetable"]')
+        dateRows = timetable.xpath('.//tr[position() > 1]')
+        for each in dateRows:
+            datesUnformated[each.xpath('.//td[1]/text()').get()] = each.xpath('.//td[2]/text()').get()
+        
+        for key, value in datesUnformated.items():
+            # logging.debug(value.strip())
+            if(len(value) > (2+1+3+1+4)):
+                # logging.debug(value)
+                # logging.debug(value[:(2+1+3+1+4)])
+                # logging.debug(value[-(2+1+3+1+4):])
+                d = dt.strptime(value[:(2+1+3+1+4)], r'%d %b %Y')
+                logging.debug(d)
+                datesFormated[key.lower().replace(" ", "_")+"_start"] = d.strftime(r'%Y-%m-%d %H:%M:%S')
+                d = dt.strptime(value[-(2+1+3+1+4):], r'%d %b %Y')
+                logging.debug(d)
+                datesFormated[key.lower().replace(" ", "_")+"_end"] = d.strftime(r'%Y-%m-%d %H:%M:%S')
+            elif (len(value) < (2+1+3+1+4)):
+                pass
+            else:
+                d = dt.strptime(value, r'%d %b %Y')
+                logging.debug(d)
+                datesFormated[key.lower().replace(" ", "_")] = d.strftime(r'%Y-%m-%d %H:%M:%S')
+        logging.debug(datesUnformated)
+        return datesFormated
     
     def parse_info(self, response):
         # numberOfDetails = len(response.xpath('//div[@id="tabs-0"]/div[contains(@class, "tabs-panel")][1]/div/div[2]/div/div[2]/ul/li'))
